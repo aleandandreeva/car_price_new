@@ -13,7 +13,6 @@ def load_model():
     return model, scaler
 
 model, scaler = load_model()
-# 8 признаков – именно столько ожидает модель
 FEATURE_NAMES = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'max_torque_rpm', 'seats']
 
 st.set_page_config(page_title="Car Price Predictor", layout="wide")
@@ -22,15 +21,15 @@ st.title("🚗 Предсказание цены автомобиля")
 menu = st.sidebar.radio("Меню", ["EDA", "Предсказание", "Важность признаков"])
 
 # ============================================
-# 1. EDA – красивые графики (используем только реальные колонки CSV)
+# 1. EDA – без корреляции, добавили красивые графики
 # ============================================
 if menu == "EDA":
     st.header("📊 Разведочный анализ данных")
     try:
         df = pd.read_csv("cars_train.csv")
-        # Колонки, которые есть в исходном файле (без max_torque_rpm)
-        eda_cols = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'seats', 'selling_price']
-        for col in eda_cols:
+        # Приводим числовые колонки к float
+        num_cols = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'seats', 'selling_price']
+        for col in num_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
     except Exception as e:
@@ -38,46 +37,47 @@ if menu == "EDA":
         st.stop()
 
     # 1. Гистограмма цены
-    st.subheader("1. Распределение цены")
+    st.subheader("📈 Распределение цены")
     fig, ax = plt.subplots()
     df['selling_price'].dropna().hist(bins=50, alpha=0.7, color='skyblue', edgecolor='black', ax=ax)
     ax.set_title('Selling price distribution')
+    ax.set_xlabel('Price')
+    ax.set_ylabel('Frequency')
     st.pyplot(fig)
 
-    # 2. Цена vs год
-    st.subheader("2. Зависимость цены от года выпуска")
+    # 2. Цена vs год выпуска
+    st.subheader("📅 Зависимость цены от года выпуска")
     fig2, ax2 = plt.subplots()
-    ax2.scatter(df['year'], df['selling_price'], alpha=0.4, c='green')
+    ax2.scatter(df['year'], df['selling_price'], alpha=0.4, c='green', edgecolors='none')
     ax2.set_xlabel('Year')
     ax2.set_ylabel('Price')
+    ax2.set_title('Price vs Year of manufacture')
     st.pyplot(fig2)
 
     # 3. Цена vs мощность
-    st.subheader("3. Цена в зависимости от мощности")
+    st.subheader("💪 Цена в зависимости от мощности")
     fig3, ax3 = plt.subplots()
-    ax3.scatter(df['max_power'], df['selling_price'], alpha=0.4, c='red')
+    ax3.scatter(df['max_power'], df['selling_price'], alpha=0.4, c='red', edgecolors='none')
     ax3.set_xlabel('Max Power (bhp)')
     ax3.set_ylabel('Price')
     st.pyplot(fig3)
 
-    # 4. Boxplot цены по типу топлива
-    st.subheader("4. Boxplot цены по типу топлива")
-    fig4, ax4 = plt.subplots()
-    sns.boxplot(data=df, x='fuel', y='selling_price', ax=ax4)
+    # 4. Распределение цены по типу трансмиссии (boxplot, логарифмическая шкала)
+    st.subheader("⚙️ Цена в зависимости от типа коробки передач")
+    fig4, ax4 = plt.subplots(figsize=(8,5))
+    sns.boxplot(data=df, x='transmission', y='selling_price', ax=ax4, palette='Set2')
     ax4.set_yscale('log')
-    ax4.set_title('Price vs Fuel type (log scale)')
+    ax4.set_title('Price vs Transmission (log scale)')
     st.pyplot(fig4)
 
-    # 5. Корреляционная матрица (только реальные колонки)
-    st.subheader("5. Корреляционная матрица числовых признаков")
-    corr_data = df[eda_cols].dropna()
-    if not corr_data.empty and len(corr_data.columns) > 1:
-        corr = corr_data.corr()
-        fig5, ax5 = plt.subplots(figsize=(10,8))
-        sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=ax5)
-        st.pyplot(fig5)
-    else:
-        st.warning("Недостаточно данных для корреляционной матрицы.")
+    # 5. Распределение цены по количеству владельцев (violin plot – красивее)
+    st.subheader("👥 Цена в зависимости от числа владельцев")
+    fig5, ax5 = plt.subplots(figsize=(10,5))
+    sns.violinplot(data=df, x='owner', y='selling_price', ax=ax5, palette='muted')
+    ax5.set_yscale('log')
+    ax5.set_title('Price vs Number of Owners')
+    plt.xticks(rotation=45)
+    st.pyplot(fig5)
 
 # ============================================
 # 2. ПРЕДСКАЗАНИЕ (ручной ввод или CSV)
@@ -124,13 +124,12 @@ elif menu == "Предсказание":
                 st.download_button("Скачать результат с предсказаниями", df_input.to_csv(index=False), "predictions.csv")
 
 # ============================================
-# 3. ВИЗУАЛИЗАЦИЯ ВЕСОВ (с понятными именами)
+# 3. ВИЗУАЛИЗАЦИЯ ВЕСОВ
 # ============================================
 elif menu == "Важность признаков":
     st.header("📈 Коэффициенты модели (влияние на цену)")
     coef = model.coef_
     df_coef = pd.DataFrame({"Признак": FEATURE_NAMES, "Коэффициент": coef})
-    # Сортируем по абсолютному значению для наглядности
     df_coef = df_coef.reindex(df_coef["Коэффициент"].abs().sort_values(ascending=False).index)
     
     fig, ax = plt.subplots(figsize=(10,6))
@@ -139,7 +138,6 @@ elif menu == "Важность признаков":
     ax.axvline(0, color='black', linewidth=0.5)
     ax.set_xlabel("Коэффициент")
     ax.set_title("Влияние признаков на цену (зелёный → цена растёт, красный → цена падает)")
-    # Подписи значений
     max_abs = max(abs(df_coef["Коэффициент"]))
     for bar, val in zip(bars, df_coef["Коэффициент"]):
         ax.text(bar.get_width() + 0.02*max_abs,
