@@ -13,6 +13,7 @@ def load_model():
     return model, scaler
 
 model, scaler = load_model()
+# 8 признаков – именно столько ожидает модель
 FEATURE_NAMES = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'max_torque_rpm', 'seats']
 
 st.set_page_config(page_title="Car Price Predictor", layout="wide")
@@ -21,26 +22,29 @@ st.title("🚗 Предсказание цены автомобиля")
 menu = st.sidebar.radio("Меню", ["EDA", "Предсказание", "Важность признаков"])
 
 # ============================================
-# 1. EDA (красивые графики)
+# 1. EDA – красивые графики (используем только реальные колонки CSV)
 # ============================================
 if menu == "EDA":
     st.header("📊 Разведочный анализ данных")
     try:
         df = pd.read_csv("cars_train.csv")
-        # Приводим числовые колонки к float
-        for col in FEATURE_NAMES + ['selling_price']:
+        # Колонки, которые есть в исходном файле (без max_torque_rpm)
+        eda_cols = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'seats', 'selling_price']
+        for col in eda_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-    except:
-        st.error("Не найден файл cars_train.csv. Загрузите его в репозиторий.")
+    except Exception as e:
+        st.error(f"Не удалось загрузить cars_train.csv: {e}")
         st.stop()
 
+    # 1. Гистограмма цены
     st.subheader("1. Распределение цены")
     fig, ax = plt.subplots()
     df['selling_price'].dropna().hist(bins=50, alpha=0.7, color='skyblue', edgecolor='black', ax=ax)
     ax.set_title('Selling price distribution')
     st.pyplot(fig)
 
+    # 2. Цена vs год
     st.subheader("2. Зависимость цены от года выпуска")
     fig2, ax2 = plt.subplots()
     ax2.scatter(df['year'], df['selling_price'], alpha=0.4, c='green')
@@ -48,6 +52,7 @@ if menu == "EDA":
     ax2.set_ylabel('Price')
     st.pyplot(fig2)
 
+    # 3. Цена vs мощность
     st.subheader("3. Цена в зависимости от мощности")
     fig3, ax3 = plt.subplots()
     ax3.scatter(df['max_power'], df['selling_price'], alpha=0.4, c='red')
@@ -55,6 +60,7 @@ if menu == "EDA":
     ax3.set_ylabel('Price')
     st.pyplot(fig3)
 
+    # 4. Boxplot цены по типу топлива
     st.subheader("4. Boxplot цены по типу топлива")
     fig4, ax4 = plt.subplots()
     sns.boxplot(data=df, x='fuel', y='selling_price', ax=ax4)
@@ -62,19 +68,19 @@ if menu == "EDA":
     ax4.set_title('Price vs Fuel type (log scale)')
     st.pyplot(fig4)
 
+    # 5. Корреляционная матрица (только реальные колонки)
     st.subheader("5. Корреляционная матрица числовых признаков")
-    num_cols = FEATURE_NAMES + ['selling_price']
-    corr_data = df[num_cols].dropna()
-    if not corr_data.empty:
+    corr_data = df[eda_cols].dropna()
+    if not corr_data.empty and len(corr_data.columns) > 1:
         corr = corr_data.corr()
         fig5, ax5 = plt.subplots(figsize=(10,8))
         sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=ax5)
         st.pyplot(fig5)
     else:
-        st.warning("Недостаточно данных для корреляции.")
+        st.warning("Недостаточно данных для корреляционной матрицы.")
 
 # ============================================
-# 2. ПРЕДСКАЗАНИЕ (CSV или ручной ввод)
+# 2. ПРЕДСКАЗАНИЕ (ручной ввод или CSV)
 # ============================================
 elif menu == "Предсказание":
     st.header("💰 Предсказание цены")
@@ -105,7 +111,6 @@ elif menu == "Предсказание":
         uploaded = st.file_uploader("Загрузите CSV с колонками: " + ", ".join(FEATURE_NAMES), type="csv")
         if uploaded:
             df_input = pd.read_csv(uploaded)
-            # Проверяем наличие всех колонок
             missing = set(FEATURE_NAMES) - set(df_input.columns)
             if missing:
                 st.error(f"В файле отсутствуют столбцы: {missing}")
@@ -119,12 +124,13 @@ elif menu == "Предсказание":
                 st.download_button("Скачать результат с предсказаниями", df_input.to_csv(index=False), "predictions.csv")
 
 # ============================================
-# 3. ВИЗУАЛИЗАЦИЯ ВЕСОВ
+# 3. ВИЗУАЛИЗАЦИЯ ВЕСОВ (с понятными именами)
 # ============================================
 elif menu == "Важность признаков":
     st.header("📈 Коэффициенты модели (влияние на цену)")
     coef = model.coef_
     df_coef = pd.DataFrame({"Признак": FEATURE_NAMES, "Коэффициент": coef})
+    # Сортируем по абсолютному значению для наглядности
     df_coef = df_coef.reindex(df_coef["Коэффициент"].abs().sort_values(ascending=False).index)
     
     fig, ax = plt.subplots(figsize=(10,6))
@@ -132,12 +138,15 @@ elif menu == "Важность признаков":
     bars = ax.barh(df_coef["Признак"], df_coef["Коэффициент"], color=colors)
     ax.axvline(0, color='black', linewidth=0.5)
     ax.set_xlabel("Коэффициент")
-    ax.set_title("Влияние признаков на цену (положительный = рост цены)")
+    ax.set_title("Влияние признаков на цену (зелёный → цена растёт, красный → цена падает)")
+    # Подписи значений
+    max_abs = max(abs(df_coef["Коэффициент"]))
     for bar, val in zip(bars, df_coef["Коэффициент"]):
-        ax.text(bar.get_width() + 0.01*max(abs(df_coef["Коэффициент"])),
+        ax.text(bar.get_width() + 0.02*max_abs,
                 bar.get_y() + bar.get_height()/2,
                 f'{val:.3f}', va='center', fontsize=9)
     plt.tight_layout()
     st.pyplot(fig)
-    with st.expander("Таблица коэффициентов"):
+    
+    with st.expander("Таблица коэффициентов (полностью)"):
         st.dataframe(df_coef.style.format({"Коэффициент": "{:.4f}"}))
