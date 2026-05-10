@@ -2,109 +2,142 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+# ---------- Загрузка модели ----------
+@st.cache_resource
+def load_model():
+    model = joblib.load("ridge_model.pkl")
+    scaler = joblib.load("ridge_scaler.pkl")
+    return model, scaler
+
+model, scaler = load_model()
+FEATURE_NAMES = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'max_torque_rpm', 'seats']
 
 st.set_page_config(page_title="Car Price Predictor", layout="wide")
 st.title("🚗 Предсказание цены автомобиля")
 
-@st.cache_resource
-def load_model_and_names():
-    model = joblib.load("ridge_bonus_model.pkl")
-    scaler = joblib.load("scaler.pkl")
-    try:
-        with open("feature_names_full.pkl", "rb") as f:
-            feature_names = pickle.load(f)
-    except:
-        feature_names = [f"feature_{i}" for i in range(scaler.n_features_in_)]
-    return model, scaler, feature_names
-
-model, scaler, feature_names = load_model_and_names()
-
 menu = st.sidebar.radio("Меню", ["EDA", "Предсказание", "Важность признаков"])
 
-# ---------------------- EDA ----------------------
+# ============================================
+# 1. EDA (красивые графики)
+# ============================================
 if menu == "EDA":
     st.header("📊 Разведочный анализ данных")
-    df = pd.read_csv("cars_train.csv")
-    numeric_cols = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'seats', 'selling_price']
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-    st.subheader("Первые строки")
-    st.dataframe(df.head(10))
-    
-    st.subheader("Распределение цены")
+    try:
+        df = pd.read_csv("cars_train.csv")
+        # Приводим числовые колонки к float
+        for col in FEATURE_NAMES + ['selling_price']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+    except:
+        st.error("Не найден файл cars_train.csv. Загрузите его в репозиторий.")
+        st.stop()
+
+    st.subheader("1. Распределение цены")
     fig, ax = plt.subplots()
-    df['selling_price'].dropna().hist(bins=50, alpha=0.7, ax=ax)
-    ax.set_title('Selling Price Distribution')
+    df['selling_price'].dropna().hist(bins=50, alpha=0.7, color='skyblue', edgecolor='black', ax=ax)
+    ax.set_title('Selling price distribution')
     st.pyplot(fig)
-    
-    st.subheader("Цена vs Год выпуска")
+
+    st.subheader("2. Зависимость цены от года выпуска")
     fig2, ax2 = plt.subplots()
-    ax2.scatter(df['year'], df['selling_price'], alpha=0.4)
+    ax2.scatter(df['year'], df['selling_price'], alpha=0.4, c='green')
     ax2.set_xlabel('Year')
     ax2.set_ylabel('Price')
     st.pyplot(fig2)
-    
-    st.subheader("Корреляционная матрица")
-    df_corr = df[numeric_cols].dropna()
-    if not df_corr.empty and len(df_corr.columns) > 1:
-        corr = df_corr.corr()
-        fig3, ax3 = plt.subplots(figsize=(10,8))
-        sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=ax3)
-        st.pyplot(fig3)
+
+    st.subheader("3. Цена в зависимости от мощности")
+    fig3, ax3 = plt.subplots()
+    ax3.scatter(df['max_power'], df['selling_price'], alpha=0.4, c='red')
+    ax3.set_xlabel('Max Power (bhp)')
+    ax3.set_ylabel('Price')
+    st.pyplot(fig3)
+
+    st.subheader("4. Boxplot цены по типу топлива")
+    fig4, ax4 = plt.subplots()
+    sns.boxplot(data=df, x='fuel', y='selling_price', ax=ax4)
+    ax4.set_yscale('log')
+    ax4.set_title('Price vs Fuel type (log scale)')
+    st.pyplot(fig4)
+
+    st.subheader("5. Корреляционная матрица числовых признаков")
+    num_cols = FEATURE_NAMES + ['selling_price']
+    corr_data = df[num_cols].dropna()
+    if not corr_data.empty:
+        corr = corr_data.corr()
+        fig5, ax5 = plt.subplots(figsize=(10,8))
+        sns.heatmap(corr, annot=True, fmt='.2f', cmap='coolwarm', ax=ax5)
+        st.pyplot(fig5)
     else:
-        st.warning("Недостаточно данных для корреляционной матрицы")
+        st.warning("Недостаточно данных для корреляции.")
 
-# ---------------------- ПРЕДСКАЗАНИЕ ----------------------
+# ============================================
+# 2. ПРЕДСКАЗАНИЕ (CSV или ручной ввод)
+# ============================================
 elif menu == "Предсказание":
-    st.header("🔧 Введите характеристики автомобиля")
-    st.warning("Модель обучена на расширенном наборе признаков (включая категориальные). Для точного предсказания требуется полный ввод. Для демонстрации мы используем упрощённую форму.")
-    col1, col2 = st.columns(2)
-    with col1:
-        year = st.number_input("Год выпуска", 1990, 2020, 2015)
-        km_driven = st.number_input("Пробег (км)", 0, 500000, 50000)
-        mileage = st.number_input("Расход топлива (kmpl)", 0.0, 40.0, 18.0, step=0.5)
-        engine = st.number_input("Объём двигателя (CC)", 600, 6000, 1500, step=50)
-    with col2:
-        max_power = st.number_input("Мощность (bhp)", 30, 800, 100, step=5)
-        torque = st.number_input("Крутящий момент (Nm)", 50, 800, 150, step=10)
-        max_torque_rpm = st.number_input("Обороты макс. момента (rpm)", 1000, 9000, 2500, step=100)
-        seats = st.number_input("Количество мест", 2, 14, 5, step=1)
+    st.header("💰 Предсказание цены")
+    mode = st.radio("Выберите способ ввода", ["Ручной ввод", "Загрузить CSV файл"])
     
-    if st.button("Рассчитать цену"):
-        # Подаём 8 числовых признаков (но модель ждёт больше) – заглушка
-        st.info("Для корректного предсказания необходимо ввести все признаки (включая категориальные). Рекомендуется переобучить модель на 8 числовых признаках.")
-        st.success("💰 Примерная цена: 650 000 ₽")
+    if mode == "Ручной ввод":
+        st.subheader("Введите 8 характеристик автомобиля")
+        col1, col2 = st.columns(2)
+        with col1:
+            year = st.number_input("Год выпуска", 1990, 2020, 2015)
+            km_driven = st.number_input("Пробег (км)", 0, 500000, 50000)
+            mileage = st.number_input("Расход топлива (kmpl)", 0.0, 40.0, 18.0, step=0.5)
+            engine = st.number_input("Объём двигателя (CC)", 600, 6000, 1500, step=50)
+        with col2:
+            max_power = st.number_input("Мощность (bhp)", 30, 800, 100, step=5)
+            torque = st.number_input("Крутящий момент (Nm)", 50, 800, 150, step=10)
+            max_torque_rpm = st.number_input("Обороты макс. момента (rpm)", 1000, 9000, 2500, step=100)
+            seats = st.number_input("Количество мест", 2, 14, 5, step=1)
+        
+        if st.button("Рассчитать цену"):
+            input_arr = np.array([[year, km_driven, mileage, engine, max_power, torque, max_torque_rpm, seats]])
+            input_scaled = scaler.transform(input_arr)
+            pred_log = model.predict(input_scaled)[0]
+            pred_price = np.expm1(pred_log)
+            st.success(f"✨ Предсказанная цена: **{pred_price:,.0f} ₽**")
+    
+    else:  # CSV загрузка
+        uploaded = st.file_uploader("Загрузите CSV с колонками: " + ", ".join(FEATURE_NAMES), type="csv")
+        if uploaded:
+            df_input = pd.read_csv(uploaded)
+            # Проверяем наличие всех колонок
+            missing = set(FEATURE_NAMES) - set(df_input.columns)
+            if missing:
+                st.error(f"В файле отсутствуют столбцы: {missing}")
+            else:
+                X = df_input[FEATURE_NAMES].values
+                X_scaled = scaler.transform(X)
+                pred_log = model.predict(X_scaled)
+                pred_price = np.expm1(pred_log)
+                df_input['predicted_price'] = pred_price
+                st.dataframe(df_input[['predicted_price']].head())
+                st.download_button("Скачать результат с предсказаниями", df_input.to_csv(index=False), "predictions.csv")
 
-# ---------------------- ВАЖНОСТЬ ПРИЗНАКОВ ----------------------
+# ============================================
+# 3. ВИЗУАЛИЗАЦИЯ ВЕСОВ
+# ============================================
 elif menu == "Важность признаков":
-    st.header("📈 Коэффициенты модели (топ-15 наиболее влияющих признаков)")
+    st.header("📈 Коэффициенты модели (влияние на цену)")
     coef = model.coef_
-    if len(coef) != len(feature_names):
-        st.warning(f"Несоответствие: {len(coef)} коэффициентов, {len(feature_names)} имён. Используем индексы.")
-        feature_names = [f"coef_{i}" for i in range(len(coef))]
+    df_coef = pd.DataFrame({"Признак": FEATURE_NAMES, "Коэффициент": coef})
+    df_coef = df_coef.reindex(df_coef["Коэффициент"].abs().sort_values(ascending=False).index)
     
-    df_coef = pd.DataFrame({"Признак": feature_names, "Коэффициент": coef})
-    df_coef["abs_coef"] = df_coef["Коэффициент"].abs()
-    df_coef = df_coef.sort_values("abs_coef", ascending=False).drop("abs_coef", axis=1)
-    top_k = 15
-    df_top = df_coef.head(top_k)
-    
-    fig, ax = plt.subplots(figsize=(10, 8))
-    colors = ['green' if x > 0 else 'red' for x in df_top["Коэффициент"]]
-    bars = ax.barh(df_top["Признак"], df_top["Коэффициент"], color=colors)
+    fig, ax = plt.subplots(figsize=(10,6))
+    colors = ['#2ecc71' if x > 0 else '#e74c3c' for x in df_coef["Коэффициент"]]
+    bars = ax.barh(df_coef["Признак"], df_coef["Коэффициент"], color=colors)
     ax.axvline(0, color='black', linewidth=0.5)
     ax.set_xlabel("Коэффициент")
-    ax.set_title(f"Impact on price (top {top_k})")
-    for bar, val in zip(bars, df_top["Коэффициент"]):
-        ax.text(bar.get_width() + 0.01 * max(abs(df_top["Коэффициент"])),
+    ax.set_title("Влияние признаков на цену (положительный = рост цены)")
+    for bar, val in zip(bars, df_coef["Коэффициент"]):
+        ax.text(bar.get_width() + 0.01*max(abs(df_coef["Коэффициент"])),
                 bar.get_y() + bar.get_height()/2,
-                f'{val:.3f}', va='center', fontsize=7)
+                f'{val:.3f}', va='center', fontsize=9)
     plt.tight_layout()
     st.pyplot(fig)
-    
-    with st.expander("Показать полную таблицу коэффициентов"):
+    with st.expander("Таблица коэффициентов"):
         st.dataframe(df_coef.style.format({"Коэффициент": "{:.4f}"}))
