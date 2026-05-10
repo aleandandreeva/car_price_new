@@ -5,7 +5,6 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# ---------- Загрузка модели ----------
 @st.cache_resource
 def load_model():
     model = joblib.load("ridge_model.pkl")
@@ -16,18 +15,16 @@ model, scaler = load_model()
 FEATURE_NAMES = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'max_torque_rpm', 'seats']
 
 st.set_page_config(page_title="Car Price Predictor", layout="wide")
-st.title("🚗 Предсказание цены автомобиля")
+st.title("Предсказание цены автомобиля")
 
 menu = st.sidebar.radio("Меню", ["EDA", "Предсказание", "Важность признаков"])
 
-# ============================================
-# 1. EDA – без корреляции, добавили красивые графики
-# ============================================
+
 if menu == "EDA":
-    st.header("📊 Разведочный анализ данных")
+    st.header("Разведочный анализ данных")
     try:
         df = pd.read_csv("cars_train.csv")
-        # Приводим числовые колонки к float
+        #float
         num_cols = ['year', 'km_driven', 'mileage', 'engine', 'max_power', 'torque', 'seats', 'selling_price']
         for col in num_cols:
             if col in df.columns:
@@ -36,8 +33,8 @@ if menu == "EDA":
         st.error(f"Не удалось загрузить cars_train.csv: {e}")
         st.stop()
 
-    # 1. Гистограмма цены
-    st.subheader("📈 Распределение цены")
+    #гистограмма цены
+    st.subheader("Распределение цены")
     fig, ax = plt.subplots()
     df['selling_price'].dropna().hist(bins=50, alpha=0.7, color='skyblue', edgecolor='black', ax=ax)
     ax.set_title('Selling price distribution')
@@ -45,8 +42,8 @@ if menu == "EDA":
     ax.set_ylabel('Frequency')
     st.pyplot(fig)
 
-    # 2. Цена vs год выпуска
-    st.subheader("📅 Зависимость цены от года выпуска")
+    #цена - год выпуска
+    st.subheader("Зависимость цены от года выпуска")
     fig2, ax2 = plt.subplots()
     ax2.scatter(df['year'], df['selling_price'], alpha=0.4, c='green', edgecolors='none')
     ax2.set_xlabel('Year')
@@ -54,24 +51,24 @@ if menu == "EDA":
     ax2.set_title('Price vs Year of manufacture')
     st.pyplot(fig2)
 
-    # 3. Цена vs мощность
-    st.subheader("💪 Цена в зависимости от мощности")
+    #цена - мощность
+    st.subheader("Цена в зависимости от мощности")
     fig3, ax3 = plt.subplots()
     ax3.scatter(df['max_power'], df['selling_price'], alpha=0.4, c='red', edgecolors='none')
     ax3.set_xlabel('Max Power (bhp)')
     ax3.set_ylabel('Price')
     st.pyplot(fig3)
 
-    # 4. Распределение цены по типу трансмиссии (boxplot, логарифмическая шкала)
-    st.subheader("⚙️ Цена в зависимости от типа коробки передач")
+    #распределение цены по типу трансмиссии
+    st.subheader("Цена в зависимости от типа коробки передач")
     fig4, ax4 = plt.subplots(figsize=(8,5))
     sns.boxplot(data=df, x='transmission', y='selling_price', ax=ax4, palette='Set2')
     ax4.set_yscale('log')
     ax4.set_title('Price vs Transmission (log scale)')
     st.pyplot(fig4)
 
-    # 5. Распределение цены по количеству владельцев (violin plot – красивее)
-    st.subheader("👥 Цена в зависимости от числа владельцев")
+    #распределение цены по количеству владельцев
+    st.subheader("Цена в зависимости от числа владельцев")
     fig5, ax5 = plt.subplots(figsize=(10,5))
     sns.violinplot(data=df, x='owner', y='selling_price', ax=ax5, palette='muted')
     ax5.set_yscale('log')
@@ -79,9 +76,8 @@ if menu == "EDA":
     plt.xticks(rotation=45)
     st.pyplot(fig5)
 
-# ============================================
-# 2. ПРЕДСКАЗАНИЕ (ручной ввод или CSV)
-# ============================================
+
+#предсказание
 elif menu == "Предсказание":
     st.header("💰 Предсказание цены")
     mode = st.radio("Выберите способ ввода", ["Ручной ввод", "Загрузить CSV файл"])
@@ -107,7 +103,7 @@ elif menu == "Предсказание":
             pred_price = np.expm1(pred_log)
             st.success(f"✨ Предсказанная цена: **{pred_price:,.0f} ₽**")
     
-    else:  # CSV загрузка
+    else:  #CSV
         uploaded = st.file_uploader("Загрузите CSV с колонками: " + ", ".join(FEATURE_NAMES), type="csv")
         if uploaded:
             df_input = pd.read_csv(uploaded)
@@ -123,11 +119,9 @@ elif menu == "Предсказание":
                 st.dataframe(df_input[['predicted_price']].head())
                 st.download_button("Скачать результат с предсказаниями", df_input.to_csv(index=False), "predictions.csv")
 
-# ============================================
-# 3. ВИЗУАЛИЗАЦИЯ ВЕСОВ
-# ============================================
+#визуал
 elif menu == "Важность признаков":
-    st.header("📈 Коэффициенты модели (влияние на цену)")
+    st.header("Коэффициенты модели (влияние на цену)")
     coef = model.coef_
     df_coef = pd.DataFrame({"Признак": FEATURE_NAMES, "Коэффициент": coef})
     df_coef = df_coef.reindex(df_coef["Коэффициент"].abs().sort_values(ascending=False).index)
